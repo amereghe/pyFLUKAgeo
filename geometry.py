@@ -70,16 +70,23 @@ class Geometry():
         data=tmpLine.split()
         myMatName=data[1]
         myFirstRegName=data[2]
-        myEntry,iFirst=self.ret("REG",myFirstRegName)
         if (len(data)>=4):
             myLastRegName=data[3]
-            myEntry,iLast=self.ret("REG",myLastRegName)
         else:
-            iLast=iFirst
+            myLastRegName=None
         if (len(data)>=5):
             iStep=int(data[4])
         else:
             iStep=1
+        self.AssignMaterial(myMatName,myFirstRegName,myLastRegName=myLastRegName,iStep=iStep)
+
+    def AssignMaterial(self,myMatName,myFirstRegName,myLastRegName=None,iStep=1):
+        '''function performing the actual material assignment'''
+        myEntry,iFirst=self.ret("REG",myFirstRegName)
+        if (myLastRegName is not None):
+            myEntry,iLast=self.ret("REG",myLastRegName)
+        else:
+            iLast=iFirst
         for iEntry in range(iFirst,iLast+1,iStep):
             print("...assigning material %s to region %s..."%(myMatName,self.regs[iEntry].echoName()))
             self.regs[iEntry].assignMat(myMatName)
@@ -902,7 +909,7 @@ class Geometry():
                     
         print("...done.")
 
-    def rename(self,newName,lNotify=True,nDigits=2,addChar="_"):
+    def rename(self,newName,lNotify=True,nDigits=2,addChar="_",exceptions=None):
         print("renaming geometry...")
         nName,nNameFmt=TailNameInt(newName,nDigits=nDigits,addChar=addChar)
         nNameSco,nNameScoFmt=TailNameInt(newName,maxLen=10,nDigits=nDigits+1,addChar=addChar)
@@ -910,22 +917,36 @@ class Geometry():
         oldRegNames=[] ; newRegNames=[]
         oldTrasNames=[]; newTrasNames=[]
         for iBody,myBod in enumerate(self.bods):
-            oldBodyNames.append(myBod.echoName())
+            myCurrName=myBod.echoName()
+            if (exceptions is not None):
+                if ( "bods" in exceptions ):
+                    if (myCurrName in exceptions["bods"]):
+                        continue
+            oldBodyNames.append(myCurrName)
             newBodyNames.append(nNameFmt%(iBody+1))
             myBod.rename(newBodyNames[-1],lNotify=lNotify)
         for iReg,myReg in enumerate(self.regs):
-            oldRegNames.append(myReg.echoName())
+            myCurrName=myReg.echoName()
+            if (exceptions is not None):
+                if ( "regs" in exceptions ):
+                    if (myCurrName in exceptions["regs"]):
+                        continue
+            oldRegNames.append(myCurrName)
             newRegNames.append(nNameFmt%(iReg+1))
             myReg.rename(newRegNames[-1],lNotify=lNotify)
             if (myReg.isLattice()):
                 myReg.assignLat(myLatName=newRegNames[-1])
             myReg.BodyNameReplaceInDef(oldBodyNames,newBodyNames)
         for iTras,myTras in enumerate(self.tras):
-            oldTrasNames.append(myTras.echoName())
+            myCurrName=myTras.echoName()
+            if (exceptions is not None):
+                if ( "tras" in exceptions ):
+                    if (myCurrName in exceptions["tras"]):
+                        continue
+            oldTrasNames.append(myCurrName)
             newTrasNames.append(nNameFmt%(iTras+1))
             myTras.rename(newTrasNames[-1],lNotify=lNotify)
         for iBin,myBin in enumerate(self.bins):
-            myBin.rename(nNameScoFmt%(iBin+1),lNotify=lNotify)
             if (myBin.isLinkedToTransform()):
                 trName=myBin.retTransformName()
                 lFound=False
@@ -939,10 +960,21 @@ class Geometry():
                     exit(1)
             else:
                 print("Geometry.rename(): USRBIN %s with no associated transformation..."%(myBin.echoName()))
+            myCurrName=myBin.echoName()
+            if (exceptions is not None):
+                if ( "bins" in exceptions ):
+                    if (myCurrName in exceptions["bins"]):
+                        continue
+            myBin.rename(nNameScoFmt%(iBin+1),lNotify=lNotify)
         for iSco,mySco in enumerate(self.scos):
-            mySco.rename(nNameScoFmt%(iSco+1),lNotify=lNotify)
             for oName,nName in zip(oldRegNames,newRegNames):
                 mySco.regNameReplaceInDef(oName,nName)
+            myCurrName=mySco.echoName()
+            if (exceptions is not None):
+                if ( "scos" in exceptions ):
+                    if (myCurrName in exceptions["scos"]):
+                        continue
+            mySco.rename(nNameScoFmt%(iSco+1),lNotify=lNotify)
         for myBod in self.bods:
             if (myBod.isLinkedToTransform()):
                 if (myBod.retTransformName() not in oldTrasNames):
