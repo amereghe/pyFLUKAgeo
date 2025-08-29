@@ -70,16 +70,23 @@ class Geometry():
         data=tmpLine.split()
         myMatName=data[1]
         myFirstRegName=data[2]
-        myEntry,iFirst=self.ret("REG",myFirstRegName)
         if (len(data)>=4):
             myLastRegName=data[3]
-            myEntry,iLast=self.ret("REG",myLastRegName)
         else:
-            iLast=iFirst
+            myLastRegName=None
         if (len(data)>=5):
             iStep=int(data[4])
         else:
             iStep=1
+        self.AssignMaterial(myMatName,myFirstRegName,myLastRegName=myLastRegName,iStep=iStep)
+
+    def AssignMaterial(self,myMatName,myFirstRegName,myLastRegName=None,iStep=1):
+        '''function performing the actual material assignment'''
+        myEntry,iFirst=self.ret("REG",myFirstRegName)
+        if (myLastRegName is not None):
+            myEntry,iLast=self.ret("REG",myLastRegName)
+        else:
+            iLast=iFirst
         for iEntry in range(iFirst,iLast+1,iStep):
             print("...assigning material %s to region %s..."%(myMatName,self.regs[iEntry].echoName()))
             self.regs[iEntry].assignMat(myMatName)
@@ -902,7 +909,7 @@ class Geometry():
                     
         print("...done.")
 
-    def rename(self,newName,lNotify=True,nDigits=2,addChar="_"):
+    def rename(self,newName,lNotify=True,nDigits=2,addChar="_",exceptions=None):
         print("renaming geometry...")
         nName,nNameFmt=TailNameInt(newName,nDigits=nDigits,addChar=addChar)
         nNameSco,nNameScoFmt=TailNameInt(newName,maxLen=10,nDigits=nDigits+1,addChar=addChar)
@@ -910,22 +917,36 @@ class Geometry():
         oldRegNames=[] ; newRegNames=[]
         oldTrasNames=[]; newTrasNames=[]
         for iBody,myBod in enumerate(self.bods):
-            oldBodyNames.append(myBod.echoName())
+            myCurrName=myBod.echoName()
+            if (exceptions is not None):
+                if ( "bods" in exceptions ):
+                    if (myCurrName in exceptions["bods"]):
+                        continue
+            oldBodyNames.append(myCurrName)
             newBodyNames.append(nNameFmt%(iBody+1))
             myBod.rename(newBodyNames[-1],lNotify=lNotify)
         for iReg,myReg in enumerate(self.regs):
-            oldRegNames.append(myReg.echoName())
+            myCurrName=myReg.echoName()
+            if (exceptions is not None):
+                if ( "regs" in exceptions ):
+                    if (myCurrName in exceptions["regs"]):
+                        continue
+            oldRegNames.append(myCurrName)
             newRegNames.append(nNameFmt%(iReg+1))
             myReg.rename(newRegNames[-1],lNotify=lNotify)
             if (myReg.isLattice()):
                 myReg.assignLat(myLatName=newRegNames[-1])
             myReg.BodyNameReplaceInDef(oldBodyNames,newBodyNames)
         for iTras,myTras in enumerate(self.tras):
-            oldTrasNames.append(myTras.echoName())
+            myCurrName=myTras.echoName()
+            if (exceptions is not None):
+                if ( "tras" in exceptions ):
+                    if (myCurrName in exceptions["tras"]):
+                        continue
+            oldTrasNames.append(myCurrName)
             newTrasNames.append(nNameFmt%(iTras+1))
             myTras.rename(newTrasNames[-1],lNotify=lNotify)
         for iBin,myBin in enumerate(self.bins):
-            myBin.rename(nNameScoFmt%(iBin+1),lNotify=lNotify)
             if (myBin.isLinkedToTransform()):
                 trName=myBin.retTransformName()
                 lFound=False
@@ -939,10 +960,21 @@ class Geometry():
                     exit(1)
             else:
                 print("Geometry.rename(): USRBIN %s with no associated transformation..."%(myBin.echoName()))
+            myCurrName=myBin.echoName()
+            if (exceptions is not None):
+                if ( "bins" in exceptions ):
+                    if (myCurrName in exceptions["bins"]):
+                        continue
+            myBin.rename(nNameScoFmt%(iBin+1),lNotify=lNotify)
         for iSco,mySco in enumerate(self.scos):
-            mySco.rename(nNameScoFmt%(iSco+1),lNotify=lNotify)
             for oName,nName in zip(oldRegNames,newRegNames):
                 mySco.regNameReplaceInDef(oName,nName)
+            myCurrName=mySco.echoName()
+            if (exceptions is not None):
+                if ( "scos" in exceptions ):
+                    if (myCurrName in exceptions["scos"]):
+                        continue
+            mySco.rename(nNameScoFmt%(iSco+1),lNotify=lNotify)
         for myBod in self.bods:
             if (myBod.isLinkedToTransform()):
                 if (myBod.retTransformName() not in oldTrasNames):
@@ -1067,36 +1099,39 @@ class Geometry():
             print("...old unit: %d - new units:"%(uniqueUnits[iUnit]),newUnits[iUnit])
         if (lDebug): print("...done;")
 
-    def resizeUsrbins(self,newL,whichUnits=None,axis=3,lDebug=False):
+    def resizeUsrbins(self,newL,whichBins=None,axis=3,lDebug=False):
         '''
         input:
         - newL: new length [cm];
-        - whichUnits: units of USRBINs to be updated;
+        - whichBins: unit(s)/name(s) of USRBINs to be updated;
         '''
         if (lDebug): print("resizing USRBINs...")
-        if (whichUnits is None): whichUnits="ALL"
-        if (isinstance(whichUnits,str)):
-            if (whichUnits.upper()=="ALL"):
-                bins2mod,iBins2mod=self.ret("bin","ALL")
+        if (whichBins is None): whichBins="ALL"
+        if (isinstance(whichBins,str)):
+            if (whichBins.upper()=="ALL"):
+                bins2mod,iBins2mod=self.ret("bin","ALL") # returns a list of names and a list of scalars
                 if (lDebug): print("...re-sizing ALL USRBINs, i.e. %d ..."%(len(bins2mod)))
             else:
-                print("Geometry.resizeUsrbins(): Cannot specify USRBIN names for resizing!")
-                exit(1)
-        elif (isinstance(whichUnits,float) or isinstance(whichUnits,int)):
-            bins2mod,iBins2mod=self.ret("BININUNIT",whichUnits)
-            if (lDebug): print("re-sizing USRBINs in unit %d, i.e. %d ..."%(whichUnits,len(bins2mod)))
-        elif (isinstance(whichUnits,list)):
+                bins2mod=[whichBins]
+        elif (isinstance(whichBins,float) or isinstance(whichBins,int)):
+            bins2mod,iBins2mod=self.ret("BININUNIT",whichBins) # returns a list of names and a list of scalars
+            if (lDebug): print("re-sizing USRBINs in unit %d, i.e. %d ..."%(whichBins,len(bins2mod)))
+        elif (isinstance(whichBins,list)):
             bins2mod=[]; iBins2mod=[]
-            for whichUnit in whichUnits:
-                tBins2mod,tIBins2mod=self.ret("BININUNIT",whichUnit)
-                print("re-sizing USRBINs in unit %d, i.e. %d ..."%(whichUnit,len(tBins2mod)))
-                if (isinstance(tBins2mod,list)):
-                    bins2mod=bins2mod+tBins2mod
-                else:
-                    bins2mod.append(tBins2mod)
+            for whichBin in whichBins:
+                if (isinstance(whichBin,float) or isinstance(whichBin,int)):
+                    tBins2mod,tIBins2mod=self.ret("BININUNIT",whichBin)
+                    print("re-sizing USRBINs in unit %d, i.e. %d ..."%(whichBin,len(tBins2mod)))
+                    if (isinstance(tBins2mod,list)):
+                        bins2mod=bins2mod+tBins2mod
+                    else:
+                        bins2mod.append(tBins2mod)
+                elif (isinstance(whichBin,str)):
+                    print("re-sizing %s USRBIN..."%(whichBin))
+                    bins2mod.append(whichBin)
         else:
             print("Geometry.resizeUsrbins(): Wrong indication of USRBINs for resizing!")
-            print(whichUnits)
+            print(whichBins)
             exit(1)
         if (bins2mod is not None):
             for bin2mod in bins2mod:
@@ -1113,12 +1148,15 @@ class Geometry():
                 bins2mod,iBins2mod=self.ret("bin","ALL")
                 if (lDebug): print("...moving ALL USRBINs, i.e. %d ..."%(len(bins2mod)))
             else:
-                print("Geometry.resizeUsrbins(): Cannot specify USRBIN names for moving!")
+                print("Geometry.moveUsrbins(): Cannot specify USRBIN names for moving!")
                 exit(1)
         elif (isinstance(whichBins,list)):
             bins2mod=[]; iBins2mod=[]
             for whichBin in whichBins:
                 tBins2mod,tIBins2mod=self.ret("BIN",whichBin)
+                if (tBins2mod is None):
+                    print("Geometry.moveUsrbins(): Cannot find USRBIN named %s!"%(whichBin))
+                    exit(1)
                 if (isinstance(tBins2mod,list)):
                     bins2mod=bins2mod+tBins2mod
                     iBins2mod=iBins2mod+tIBins2mod
@@ -1128,13 +1166,13 @@ class Geometry():
                     iBins2mod.append(tIBins2mod)
                     print("moving USRBIN named %s ..."%(whichBin))
         else:
-            print("Geometry.resizeUsrbins(): Wrong indication of USRBINs for moving!")
+            print("Geometry.moveUsrbins(): Wrong indication of USRBINs for moving!")
             print(whichBins)
             exit(1)
         if (bins2mod is not None):
             for bin2mod in bins2mod:
                 bin2mod.move(myCoord,axes=axes,lAbs=lAbs)
-                if (lDebug): print(whichBin.echo())
+                if (lDebug): print(bin2mod.echo())
         if (lDebug): print("...done;")
         
     def checkTransformations(self):
@@ -1603,7 +1641,7 @@ class Geometry():
         print('...generated %d bodies and %d regions;'%(len(newGeom.bods),len(newGeom.regs)))
         return newGeom
 
-    def SliceGeo(self,regName,zLocs,bodName=None,RegBasedScorNames=[],lDebug=True):
+    def SliceGeo(self,regName,zLocs,bodName=None,P0=None,VV=None,matName=None,RegBasedScorNames=[],lDebug=True):
         '''
         Method for slicing an existing geometry:
         - regName: name of region to be sliced;
@@ -1612,29 +1650,44 @@ class Geometry():
                    slicing should be taken;
         - RegBasedScorNames: names of region-based scorings that should be replicated
                     following slicing;
+        - P0,VV: starting point and orientation array for slicing;
 
         NB: the method applies to any region which is encapsulated in an RPP or an RCC
         '''
-        if (bodName is None): bodName=regName # default
         print("slicing region %s into %d sections..."%(regName,len(zLocs)+1))
-        print("...starting position and orientation as from body %s..."%(bodName))
         # - checks
         reg2Bsliced,iReg=self.ret("reg",regName)
         if (reg2Bsliced is None):
             print("   ...region %s NOT found!"%(regName))
             exit(1)
-        orientingBody,iBod=self.ret("bod",bodName)
-        if (orientingBody is None):
-            print("   ...body %s NOT found!"%(bodName))
+        if (matName is None): matName=reg2Bsliced.material
+        if (P0 is None and VV is None):
+            if (bodName is None): bodName=regName # default
+            print("...starting position and orientation as from body %s..."%(bodName))
+            orientingBody,iBod=self.ret("bod",bodName)
+            if (orientingBody is None):
+                print("   ...body %s NOT found!"%(bodName))
+                exit(1)
+            # - get infos
+            P0=orientingBody.retCenter(myType=-1)
+            VV=orientingBody.retOrient()
+        elif (P0 is not None and VV is     None):
+            print("Geometry.SliceGeo(): incomplete input, VV is None!")
             exit(1)
-        # - get infos
-        P0=orientingBody.retCenter(myType=-1)
-        VV=orientingBody.retOrient()
+        elif (P0 is     None and VV is not None):
+            print("Geometry.SliceGeo(): incomplete input, P0 is None!")
+            exit(1)
+        if (len(P0)!=3):
+            print("Geometry.SliceGeo(): len(P0)!=3!")
+            exit(1)
+        if (len(VV)!=3):
+            print("Geometry.SliceGeo(): len(VV)!=3!")
+            exit(1)
         if (lDebug):
             print("...starting position: [%g,%g,%g];"%(P0[0],P0[1],P0[2]))
             print("...orientation:       [%g,%g,%g];"%(VV[0],VV[1],VV[2]))
         # - build slicing geo and flag it for merging
-        slicingGeo=Geometry.CreateSlicingGeo(zLocs,P0=P0,VV=VV,defMat=reg2Bsliced.material)
+        slicingGeo=Geometry.CreateSlicingGeo(zLocs,P0=P0,VV=VV,defMat=matName)
         # - take care of reg-based scorings
         origScos=[]
         if (isinstance(RegBasedScorNames,str)):
